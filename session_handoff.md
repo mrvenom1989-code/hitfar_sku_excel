@@ -3,6 +3,7 @@
 **Project**: Hitfar SKU Manager & Ingestion Portal  
 **Repository**: [https://github.com/mrvenom1989-code/hitfar_sku_excel](https://github.com/mrvenom1989-code/hitfar_sku_excel)  
 **Database**: Supabase `public.hitfar_catalog` on `https://lcqkwuoghxdierkzscpy.supabase.co`  
+**Live URL**: [https://hitfarskuexcel.vercel.app](https://hitfarskuexcel.vercel.app)  
 **Date**: August 27, 2026
 
 ---
@@ -31,14 +32,15 @@ The **Hitfar SKU** portal is an automated ingestion and catalog synchronization 
 - **Theme**: Clean light theme matching the Reputation Guardian color system (`#f8fafc` background, `#ffffff` cards, `#D71920` crimson red accent bar & buttons).
 - **KPI Row (3 Cards)**: Total SKUs in Catalog (216), Added Today (216), Missing MSRP (1).
 - **Filter Toolbar**: Substring search, sorting dropdown preset, date range quick-pills (`All Dates`, `Today`, `Last 7 Days`, `Last 30 Days`, `Custom Date`), brand pills (`Gear4`, `House of Marley`, `HyperGear`, `SPECTRUM`, `ZAGG`), and `Show Missing MSRP Only` toggle.
-- **Scrollable Catalog Table**: Fixed-height container (`max-height: 560px`) with `position: sticky` headers and clickable column sort indicators (`▲▼`).
+- **Scrollable Catalog Table**: Fixed-height container (`max-height: 560px`) with `position: sticky` headers, touch horizontal scrolling, and clickable column sort indicators (`▲▼`).
+- **Mobile Responsive Design**: Breakpoints at 900px and 640px for full smartphone (iPhone/Android) and tablet support.
 - **Modals**: Drag-and-drop PDF upload with ingestion report summary, and inline / modal MSRP price editor.
 
 ---
 
 ## 3. Database Schema (`public.hitfar_catalog`)
 
-The table is deployed on Supabase:
+The table is deployed and active on Supabase:
 - `id` (UUID, Primary Key)
 - `item_type` (TEXT, default: 'Accessories - Cases')
 - `manufacturer` (TEXT)
@@ -63,21 +65,21 @@ The table is deployed on Supabase:
 
 ---
 
-## 4. How to Run & Verify
+## 4. Environment Variables on Vercel
 
-### Local Development:
+Under **Project Settings $\rightarrow$ Environment Variables**:
+1. `SUPABASE_URL`: `https://lcqkwuoghxdierkzscpy.supabase.co`
+2. `SUPABASE_KEY`: Service role secret key (bypasses RLS for server backend)
+3. `FLASK_SECRET_KEY`: `rg_secret_b4d8a1c9e7f6d2b3a4c5e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7`
+
+---
+
+## 5. How to Run Locally
+
 ```bash
 cd hitfar_sku
 npm run dev
 # OR: python app.py
 # OR: .\run_app.bat
 ```
-App is served on `http://localhost:5000`.
-
-### Running Automated Test Suite:
-```bash
-python hitfar_sku/execution/test_api.py
-```
-
-### Vercel Deployment:
-`hitfar_sku/vercel.json` is configured for deployment with `@vercel/python` builder. Supabase environment variables (`SUPABASE_URL`, `SUPABASE_KEY`) are identical to `advanced_reputation_guardian`.
+App runs locally at `http://localhost:5000`.

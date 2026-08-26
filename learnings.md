@@ -1,6 +1,27 @@
 # Hitfar SKU Agent Learnings & Best Practices
 
-## 1. Hitfar PDF Layout Parsing (Bounding Boxes vs. Tabular Extraction)
+## 1. Vercel Serverless Static Asset Routing (`@vercel/python`)
+
+- **Gotcha**: Adding custom rewrite rules such as `{"src": "/static/(.*)", "dest": "/static/$1"}` in `vercel.json` breaks Flask static file resolution in `@vercel/python` builds unless static assets are built with `@vercel/static`. Vercel attempts to resolve the static asset before the Flask handler runs, resulting in 404s and un-styled HTML.
+- **Fix**: 
+  - Keep `vercel.json` minimal and clean: route all traffic `/(.*)` to `app.py`.
+  - Instantiate Flask with absolute paths: `static_folder=os.path.join(current_dir, "static")` and `template_folder=os.path.join(current_dir, "templates")`.
+  - Embed self-contained CSS `<style>` and JavaScript `<script>` blocks directly into `templates/index.html` as an infallible fallback to ensure instantaneous, zero-latency rendering on serverless edges.
+
+---
+
+## 2. Mobile & Responsive UX Considerations
+
+- **Table Horizontal Scrolling on Touch**:
+  - Tabular catalog views with 7+ columns require minimum widths (`min-width: 780px`) inside an `overflow-x: auto` container with `-webkit-overflow-scrolling: touch` to avoid crushing metadata tags on mobile screens.
+  - Sticky table headers (`position: sticky; top: 0; z-index: 10;`) must have solid background fills (`#f8fafc`) and bottom borders so data rows scroll neatly underneath without visual overlap.
+- **Adaptive Layout Breakpoints**:
+  - `@media (max-width: 900px)`: Collapses 3-card KPI grids and wraps header action buttons to full-width.
+  - `@media (max-width: 640px)`: Stacks search inputs, sort dropdowns, and date filters vertically with flexible touch targets.
+
+---
+
+## 3. Hitfar PDF Layout Parsing (Bounding Boxes vs. Tabular Extraction)
 
 - **Issue**: Standard PDF text extractors fail on Hitfar invoice PDFs because line items feature multi-line product names, wrapped MPNs, and closely spaced unit costs and quantities across columns.
 - **Solution**: Used `pdfplumber.extract_words()` with explicit bounding-box coordinate slicing:
@@ -16,7 +37,7 @@
 
 ---
 
-## 2. Hitfar.com Web Scraping Architecture
+## 4. Hitfar.com Web Scraping Architecture
 
 - **Search URL Pattern**: `https://www.hitfar.com/product/?search=<Hitfar SKU>` (e.g. `https://www.hitfar.com/product/?search=15-11215`).
 - **DOM Selectors**:
@@ -31,7 +52,7 @@
 
 ---
 
-## 3. Database Ingestion & Deduplication Loop
+## 5. Database Ingestion & Deduplication Loop
 
 - **Deduplication Key**: `supplier_sku` (e.g. `Hitfar:15-11215`).
 - **Differential Ingestion**:
@@ -40,20 +61,7 @@
 
 ---
 
-## 4. Supabase & Serverless Resilience
+## 6. Supabase & Serverless Resilience
 
 - **HTTPX Retry Monkey-Patch**: Like `advanced_reputation_guardian`, PostgREST HTTP connections can encounter transient socket drops (`RemoteProtocolError`). The monkey-patch in `config.py` wraps calls with exponential backoff (retries: 3).
 - **1,000-Row PostgREST Pagination**: PostgREST caps raw queries at 1,000 items. `db_service.py` implements a `.range(offset, offset + PAGE_SIZE - 1)` loop when fetching complete catalogs for Excel exports.
-
----
-
-## 5. UI / UX Design System (Matching Reputation Guardian)
-
-- **Theme Alignment**:
-  - Background: `#f8fafc`
-  - Cards: `#ffffff` with `border: 1px solid #e2e8f0` and `box-shadow: 0 1px 3px rgba(0,0,0,0.05)`
-  - Header Accent: `border-bottom: 3px solid #D71920` (Mobile Klinik Red)
-  - Primary Buttons: `#D71920` / `#b9151b`
-- **Table Usability**:
-  - Fixed-height container (`max-height: 560px; overflow-y: auto;`) with `position: sticky; top: 0` headers ensures smooth navigation across hundreds of items.
-  - Multi-column sorting (`▲▼`) and preset dropdown for rapid catalog exploration.
