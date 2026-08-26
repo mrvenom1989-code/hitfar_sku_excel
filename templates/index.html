@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hitfar SKU - Mobile Klinik</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-card">
+            <div class="logo-section">
+                <h1 class="logo-title">Hitfar SKU</h1>
+                <p class="logo-subtitle">Live Dashboard & Ingestion Portal</p>
+            </div>
+
+            <div class="header-actions">
+                <button class="btn btn-primary" id="btnOpenUploadModal">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Upload Order PDF
+                </button>
+                <button class="btn btn-secondary" id="btnExportExcel">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export to Excel
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- KPI Cards Grid (3 Cards matching Reputation Guardian) -->
+        <section class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-label">Total SKUs in Catalog</span>
+                <h3 class="kpi-value text-accent" id="statTotalItems">...</h3>
+            </div>
+
+            <div class="kpi-card">
+                <span class="kpi-label">Added Today</span>
+                <h3 class="kpi-value" id="statAddedToday">...</h3>
+            </div>
+
+            <div class="kpi-card" id="cardMissingMsrp" style="cursor: pointer;" title="Click to filter missing MSRP items">
+                <span class="kpi-label">Missing MSRP (Action Required)</span>
+                <h3 class="kpi-value text-amber" id="statMissingMsrp">...</h3>
+            </div>
+        </section>
+
+        <!-- Filter & Search Toolbar -->
+        <section class="filter-panel card">
+            <div class="filter-row">
+                <!-- Search Input -->
+                <div class="search-box">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="Search by SKU, Product Name, MPN, Brand...">
+                </div>
+
+                <!-- Sort Preset Dropdown -->
+                <div class="sort-select-group">
+                    <label for="sortSelect">Sort:</label>
+                    <select id="sortSelect" class="select-input">
+                        <option value="created_at_desc">Date (Newest First)</option>
+                        <option value="created_at_asc">Date (Oldest First)</option>
+                        <option value="name_asc">Product Name (A - Z)</option>
+                        <option value="name_desc">Product Name (Z - A)</option>
+                        <option value="price_desc">MSRP (High to Low)</option>
+                        <option value="price_asc">MSRP (Low to High)</option>
+                        <option value="cost_desc">Cost (High to Low)</option>
+                        <option value="cost_asc">Cost (Low to High)</option>
+                    </select>
+                </div>
+
+                <!-- Date Range Quick Filters -->
+                <div class="date-pills">
+                    <button class="pill-btn active" data-range="all">All Dates</button>
+                    <button class="pill-btn" data-range="today">Today</button>
+                    <button class="pill-btn" data-range="7d">Last 7 Days</button>
+                    <button class="pill-btn" data-range="30d">Last 30 Days</button>
+                    <button class="pill-btn" id="btnCustomDate">Custom Date</button>
+                </div>
+            </div>
+
+            <!-- Custom Date Row (Hidden by default) -->
+            <div class="custom-date-row hidden" id="customDateRow">
+                <div class="date-input-group">
+                    <label>From Date:</label>
+                    <input type="date" id="dateStart">
+                </div>
+                <div class="date-input-group">
+                    <label>To Date:</label>
+                    <input type="date" id="dateEnd">
+                </div>
+                <button class="btn btn-sm btn-primary" id="btnApplyDateFilter">Apply</button>
+                <button class="btn btn-sm btn-ghost" id="btnClearDateFilter">Clear</button>
+            </div>
+
+            <!-- Filter Badges Row -->
+            <div class="filter-pills-row">
+                <div class="brand-filters" id="brandFilterContainer">
+                    <span class="filter-label">Brand:</span>
+                    <button class="brand-pill active" data-brand="All">All Brands</button>
+                </div>
+
+                <div class="toggle-filter">
+                    <label class="switch-label">
+                        <input type="checkbox" id="chkMissingMsrp">
+                        <span class="switch-slider"></span>
+                        <span class="switch-text">⚠️ Show Missing MSRP Only</span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- Catalog Data Table with Scroll Container -->
+        <section class="table-section card">
+            <div class="section-header">
+                <div>
+                    <span class="section-title">Catalog Items</span>
+                    <span class="record-badge" id="recordCountBadge">Loading...</span>
+                </div>
+                <div class="table-actions">
+                    <span class="tip-text">💡 Click header to sort | Double-click price to edit MSRP</span>
+                </div>
+            </div>
+
+            <!-- Scrollable Table Container -->
+            <div class="table-scroll-container">
+                <table class="catalog-table" id="catalogTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="supplier_sku" style="width: 140px;">
+                                Supplier SKU <span class="sort-icon">▲▼</span>
+                            </th>
+                            <th class="sortable" data-sort="name">
+                                Product Name <span class="sort-icon">▲▼</span>
+                            </th>
+                            <th class="sortable" data-sort="manufacturer" style="width: 130px;">
+                                Manufacturer <span class="sort-icon">▲▼</span>
+                            </th>
+                            <th class="sortable" data-sort="cost" style="width: 110px; text-align: right;">
+                                Cost <span class="sort-icon">▲▼</span>
+                            </th>
+                            <th class="sortable" data-sort="price" style="width: 130px; text-align: right;">
+                                Price (MSRP) <span class="sort-icon">▲▼</span>
+                            </th>
+                            <th class="sortable" data-sort="created_date" style="width: 110px; text-align: center;">
+                                Created Date <span class="sort-icon">▲▼</span>
+                            </th>
+                            <th style="width: 90px; text-align: center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="catalogTableBody">
+                        <tr>
+                            <td colspan="7" class="loading-state">
+                                <div class="spinner"></div>
+                                <p>Loading catalog items...</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- UPLOAD PDF MODAL -->
+    <div class="modal-overlay hidden" id="uploadModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Upload Hitfar Order PDF</h3>
+                <button class="btn-close" id="btnCloseUploadModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="drop-zone" id="dropZone">
+                    <input type="file" id="fileInput" accept=".pdf" class="file-input">
+                    <div class="drop-zone-content">
+                        <div class="upload-icon">
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="12" y1="18" x2="12" y2="12"></line>
+                                <polyline points="9 15 12 12 15 15"></polyline>
+                            </svg>
+                        </div>
+                        <h4>Drag & Drop your Order PDF here</h4>
+                        <p>or <span class="browse-link">browse from your computer</span></p>
+                        <span class="file-hint">Supports official Hitfar purchase order invoices (.pdf)</span>
+                    </div>
+                </div>
+
+                <div class="selected-file-banner hidden" id="selectedFileBanner">
+                    <div class="file-info-col">
+                        <span class="file-name" id="selectedFileName">filename.pdf</span>
+                        <span class="file-size" id="selectedFileSize">0 KB</span>
+                    </div>
+                    <button class="btn btn-sm btn-ghost text-accent" id="btnRemoveSelectedFile">Remove</button>
+                </div>
+
+                <!-- Processing state -->
+                <div class="processing-box hidden" id="processingBox">
+                    <div class="processing-spinner"></div>
+                    <div class="processing-text">
+                        <h4 id="processingStatusTitle">Ingesting Order PDF...</h4>
+                        <p id="processingStatusDesc">Parsing line items and reconciling with catalog database...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="btnCancelUpload">Cancel</button>
+                <button class="btn btn-primary" id="btnSubmitUpload" disabled>Process & Ingest</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- INGESTION RESULTS MODAL -->
+    <div class="modal-overlay hidden" id="resultsModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Order Ingestion Summary</h3>
+                <button class="btn-close" id="btnCloseResultsModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="summary-stats-grid">
+                    <div class="summary-stat-box">
+                        <span class="box-label">Total Items in PDF</span>
+                        <h4 id="resTotalItems">0</h4>
+                    </div>
+                    <div class="summary-stat-box" style="color: #166534;">
+                        <span class="box-label">New SKUs Added</span>
+                        <h4 id="resNewItems">0</h4>
+                    </div>
+                    <div class="summary-stat-box" style="color: #0369a1;">
+                        <span class="box-label">Already in Catalog</span>
+                        <h4 id="resExistingItems">0</h4>
+                    </div>
+                    <div class="summary-stat-box" style="color: #991b1b;">
+                        <span class="box-label">Missing MSRP</span>
+                        <h4 id="resMissingMsrp">0</h4>
+                    </div>
+                </div>
+
+                <div class="alert-box alert-amber hidden" id="modalMissingAlert">
+                    <div class="alert-icon">⚠️</div>
+                    <div class="alert-content">
+                        <strong>Missing MSRP Detected:</strong>
+                        <p id="modalMissingAlertText">Some new items could not be automatically found on Hitfar.com. You can manually enter their prices in the table.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="btnFinishResults">View Updated Catalog</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDIT MSRP MODAL -->
+    <div class="modal-overlay hidden" id="editModal">
+        <div class="modal-card modal-sm">
+            <div class="modal-header">
+                <h3>Update MSRP Price</h3>
+                <button class="btn-close" id="btnCloseEditModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="edit-sku-name" id="editItemName">Product Name</p>
+                <div class="form-group">
+                    <label>Supplier SKU:</label>
+                    <input type="text" id="editItemSku" readonly class="input-readonly">
+                </div>
+                <div class="form-group">
+                    <label>Wholesale Cost ($):</label>
+                    <input type="text" id="editItemCost" readonly class="input-readonly">
+                </div>
+                <div class="form-group">
+                    <label>Retail Price / MSRP ($):</label>
+                    <input type="number" step="0.01" min="0" id="editItemPrice" placeholder="e.g. 29.99">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" id="btnCancelEdit">Cancel</button>
+                <button class="btn btn-primary" id="btnSaveEdit">Save Price</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

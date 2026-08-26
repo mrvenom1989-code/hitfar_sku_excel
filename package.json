@@ -1,0 +1,9 @@
+{
+  "name": "hitfar_sku",
+  "version": "1.0.0",
+  "description": "Hitfar SKU Manager & Ingestion Portal",
+  "scripts": {
+    "dev": "\"%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe\" app.py",
+    "start": "\"%LOCALAPPDATA%\\Programs\\Python\\Python312\\python.exe\" app.py"
+  }
+}
