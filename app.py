@@ -21,7 +21,12 @@ from execution.db_service import (
 from execution.process_hitfar_order import parse_pdf_orders, scrape_hitfar_msrp_batch
 from execution.excel_exporter import generate_excel_bytes
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+app = Flask(
+    __name__,
+    static_folder=os.path.join(current_dir, "static"),
+    static_url_path="/static",
+    template_folder=os.path.join(current_dir, "templates")
+)
 app.secret_key = SECRET_KEY
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB max upload
 
