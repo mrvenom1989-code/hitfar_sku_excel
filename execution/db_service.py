@@ -88,6 +88,50 @@ def insert_catalog_items(items: List[Dict[str, Any]]) -> int:
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     today_str = datetime.date.today().isoformat()
     
+    # Check cache as secondary fallback (bundled data/ first, then .tmp/)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cache_map = {}
+    data_cache_path = os.path.join(base_dir, "data", "msrp_cache.json")
+    if os.path.exists(data_cache_path):
+        try:
+            with open(data_cache_path, "r", encoding="utf-8") as f:
+                cache_map.update(json.load(f))
+        except Exception:
+            pass
+    tmp_cache_path = os.path.join(base_dir, ".tmp", "msrp_cache.json")
+    if os.path.exists(tmp_cache_path):
+        try:
+            with open(tmp_cache_path, "r", encoding="utf-8") as f:
+                cache_map.update(json.load(f))
+        except Exception:
+            pass
+
+    # Fetch existing prices for these items so we NEVER overwrite an existing price with None
+    existing_prices = {}
+    if is_supabase_available():
+        try:
+            skus = [it.get("supplier_sku") or f"Hitfar:{it.get('hitfar_sku', '')}" for it in items]
+            for i in range(0, len(skus), 500):
+                sub_skus = skus[i:i+500]
+                res = supabase.table("hitfar_catalog").select("supplier_sku, price").in_("supplier_sku", sub_skus).not_.is_("price", "null").execute()
+                if res.data:
+                    for r in res.data:
+                        if r.get("supplier_sku") and r.get("price") is not None:
+                            existing_prices[r["supplier_sku"]] = r["price"]
+        except Exception as e:
+            print(f"[DB SERVICE] Note fetching existing prices: {e}")
+    else:
+        _init_local_db()
+        try:
+            conn = sqlite3.connect(LOCAL_DB_PATH)
+            cur = conn.cursor()
+            cur.execute("SELECT supplier_sku, price FROM hitfar_catalog WHERE price IS NOT NULL")
+            for r in cur.fetchall():
+                existing_prices[r[0]] = r[1]
+            conn.close()
+        except Exception:
+            pass
+
     # Normalize items
     formatted_items = []
     import uuid
@@ -95,6 +139,14 @@ def insert_catalog_items(items: List[Dict[str, Any]]) -> int:
         supplier_sku = it.get("supplier_sku") or f"Hitfar:{it.get('hitfar_sku', '')}"
         hitfar_sku = it.get("hitfar_sku") or supplier_sku.replace("Hitfar:", "")
         created_date = it.get("created_date") or today_str
+        
+        price = it.get("price")
+        if price is None:
+            # 1. Preserve existing price from database
+            price = existing_prices.get(supplier_sku)
+        if price is None:
+            # 2. Fall back to cached MSRP if known
+            price = cache_map.get(hitfar_sku)
         
         formatted_items.append({
             "id": str(it.get("id") or uuid.uuid4()),
@@ -107,7 +159,7 @@ def insert_catalog_items(items: List[Dict[str, Any]]) -> int:
             "sku": it.get("sku", "-"),
             "name": it.get("name", ""),
             "short_name": it.get("short_name", "-"),
-            "price": it.get("price"),
+            "price": price,
             "cost": it.get("cost"),
             "active": it.get("active", 1),
             "allow_cost_override": it.get("allow_cost_override", 1),
@@ -148,7 +200,7 @@ def insert_catalog_items(items: List[Dict[str, Any]]) -> int:
                 :ordered_qty, :shipped_qty
             )
             ON CONFLICT(supplier_sku) DO UPDATE SET
-                price = excluded.price,
+                price = COALESCE(excluded.price, hitfar_catalog.price),
                 cost = excluded.cost,
                 updated_at = excluded.updated_at,
                 last_order_po = excluded.last_order_po,

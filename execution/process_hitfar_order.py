@@ -107,31 +107,121 @@ def parse_pdf_orders(pdf_path):
                 
     return all_products
 
+def fetch_hitfar_msrp_http(sku, session=None):
+    """
+    Lightweight, serverless-friendly HTTP scraper that solves Hitfar's
+    SlowAES anti-bot challenge without needing a headless browser.
+    """
+    import requests
+    import binascii
+    from bs4 import BeautifulSoup
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.backends import default_backend
+
+    if session is None:
+        session = requests.Session()
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+
+    url = f"https://www.hitfar.com/product/?search={sku}"
+    try:
+        r = session.get(url, headers=headers, timeout=15)
+
+        # Solve SlowAES challenge if encountered
+        if "aes.min.js" in r.text or "slowAES.decrypt" in r.text:
+            vars_m = re.findall(r'toNumbers\(["\']([0-9a-fA-F]+)["\']\)', r.text)
+            if len(vars_m) >= 3:
+                a = binascii.unhexlify(vars_m[0])
+                b = binascii.unhexlify(vars_m[1])
+                c = binascii.unhexlify(vars_m[2])
+                
+                cipher = Cipher(algorithms.AES(a), modes.CBC(b), backend=default_backend())
+                dec = cipher.decryptor()
+                cookie_val = binascii.hexlify(dec.update(c) + dec.finalize()).decode()
+                
+                session.cookies.set("OCXS", cookie_val, domain=".hitfar.com", path="/")
+                session.cookies.set("OCXS", cookie_val, domain="www.hitfar.com", path="/")
+                
+                loc_m = re.search(r'document\.location\.href\s*=\s*["\']([^"\']+)["\']', r.text)
+                next_url = loc_m.group(1) if loc_m else url
+                r = session.get(next_url, headers=headers, timeout=15)
+
+        soup = BeautifulSoup(r.text, "html.parser")
+        msrp_elem = soup.select_one(".msrp__code")
+        if msrp_elem:
+            t = msrp_elem.get_text(strip=True)
+            m = re.search(r'\$?(\d+\.\d{2})', t)
+            if m:
+                return float(m.group(1))
+                
+        m = re.search(r'MSRP[:\s]*\$?(\d+\.\d{2})', r.text, re.I)
+        if m:
+            return float(m.group(1))
+    except Exception as e:
+        print(f"[HTTP SCRAPER] Error fetching {sku}: {e}")
+        
+    return None
+
 def scrape_hitfar_msrp_batch(skus_to_scrape, max_concurrency=4):
     print(f"\n--- Starting Hitfar MSRP scraping for {len(skus_to_scrape)} unique SKUs ---")
     sku_price_map = {}
     
-    # Check cache file if exists (using robust absolute path)
+    # Check cache file if exists (checking bundled data/ first, then .tmp/)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_cache_path = os.path.join(base_dir, "data", "msrp_cache.json")
+    if os.path.exists(data_cache_path):
+        try:
+            with open(data_cache_path, "r", encoding="utf-8") as f:
+                sku_price_map.update(json.load(f))
+        except Exception as e:
+            print(f"Note loading data cache: {e}")
+
     tmp_dir = os.path.join(base_dir, ".tmp")
     os.makedirs(tmp_dir, exist_ok=True)
     cache_path = os.path.join(tmp_dir, "msrp_cache.json")
-
     if os.path.exists(cache_path):
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
-                sku_price_map = json.load(f)
-            print(f"Loaded {len(sku_price_map)} cached MSRP records.")
+                sku_price_map.update(json.load(f))
         except Exception as e:
-            print(f"Could not load cache: {e}")
+            print(f"Note loading tmp cache: {e}")
             
+    print(f"Loaded {len(sku_price_map)} cached MSRP records.")
     missing_skus = [s for s in skus_to_scrape if s not in sku_price_map or sku_price_map[s] is None]
     print(f"SKUs needing scrape: {len(missing_skus)}")
     
     if not missing_skus:
         return sku_price_map
         
+    # Phase 1: Pure Python HTTP scraper with SlowAES solver (works in serverless and locally)
+    still_missing = []
+    import requests
+    http_session = requests.Session()
+    for sku in missing_skus:
+        msrp = fetch_hitfar_msrp_http(sku, session=http_session)
+        if msrp is not None:
+            print(f"  [HTTP Scraped] {sku} -> MSRP: ${msrp}")
+            sku_price_map[sku] = msrp
+        else:
+            still_missing.append(sku)
+
+    # Save progress to cache
     try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(sku_price_map, f, indent=2)
+    except Exception:
+        pass
+
+    if not still_missing:
+        return sku_price_map
+
+    # Phase 2: Headless Playwright fallback if available
+    try:
+        from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(

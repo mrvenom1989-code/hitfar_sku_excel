@@ -80,3 +80,17 @@
   - **Guaranteed Catalog Persistence**: In `app.py`, `insert_catalog_items(new_items)` runs regardless of scraping status, guaranteeing all line items are recorded in Supabase and missing MSRPs are flagged with `⚠️ Missing MSRP` for manual editing.
   - **Resilient Anchor Parsing**: Made word anchor extraction and regex matching in `parse_pdf_orders()` case-insensitive to handle variations like `Hitfar SKU:`, `SKU:`, etc.
 
+---
+
+## 8. Upsert Payload Nullification & Serverless MSRP Seed Bundling
+
+- **Gotcha 1 (PostgREST Upsert Overwrites Non-Null Values)**:
+  - When re-uploading invoices or syncing existing line items, invoice PDFs contain wholesale cost and quantity but never retail MSRP (`price`).
+  - In `db_service.py`, passing `"price": None` in the upsert row dictionary caused PostgREST `upsert(..., on_conflict="supplier_sku")` to overwrite existing, scraped MSRPs with `NULL` across all matching records in Supabase.
+  - **Fix**: In `insert_catalog_items()`, pre-query the batch against Supabase/SQLite for existing non-null prices. If `price` is `None` in the incoming payload, preserve the database's existing price. Also fall back to `msrp_cache.json`. In SQLite, enforce `price = COALESCE(excluded.price, hitfar_catalog.price)`.
+- **Gotcha 2 (Serverless Scraping & Bot Mitigation Constraints)**:
+  - Hitfar.com enforces an AES cookie challenge (`/aes.min.js`), requiring a JavaScript execution engine (Playwright).
+  - Vercel Serverless (`@vercel/python`) does not bundle Playwright Chromium binaries, so live web scraping cannot run inside serverless function requests. Furthermore, `.tmp/` was ignored by `.gitignore`.
+  - **Fix**: Committed a persistent, seed cache to `data/msrp_cache.json` in git. The application checks `data/msrp_cache.json` first, allowing Vercel serverless deployments to resolve known MSRPs immediately without needing headless browser binaries.
+
+

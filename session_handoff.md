@@ -30,7 +30,7 @@ The **Hitfar SKU** portal is an automated ingestion and catalog synchronization 
 
 ### Frontend UI (`templates/index.html`, `static/css/style.css`, `static/js/app.js`):
 - **Theme**: Clean light theme matching the Reputation Guardian color system (`#f8fafc` background, `#ffffff` cards, `#D71920` crimson red accent bar & buttons).
-- **KPI Row (3 Cards)**: Total SKUs in Catalog (216), Added Today (216), Missing MSRP (1).
+- **KPI Row (3 Cards)**: Total SKUs in Catalog (245), Added Today (0), Missing MSRP (1).
 - **Filter Toolbar**: Substring search, sorting dropdown preset, date range quick-pills (`All Dates`, `Today`, `Last 7 Days`, `Last 30 Days`, `Custom Date`), brand pills (`Gear4`, `House of Marley`, `HyperGear`, `SPECTRUM`, `ZAGG`), and `Show Missing MSRP Only` toggle.
 - **Scrollable Catalog Table**: Fixed-height container (`max-height: 560px`) with `position: sticky` headers, touch horizontal scrolling, and clickable column sort indicators (`▲▼`).
 - **Mobile Responsive Design**: Breakpoints at 900px and 640px for full smartphone (iPhone/Android) and tablet support.
@@ -97,4 +97,9 @@ App runs locally at `http://localhost:5000`.
   - Made SKU anchor matching in `parse_pdf_orders()` case-insensitive and broadened regex patterns for supplier SKUs and MPNs.
 - **Verification**:
   - Live test executed on Playwright browser scraping, cache writing, and `/api/upload-pdf` endpoint with 100% success.
+- **Upsert Non-Destructive Price Protection**:
+  - `insert_catalog_items()` now pre-queries the database for existing non-null prices and checks cache fallbacks, preventing invoice re-uploads from nullifying existing MSRPs.
+- **Bundled Seed Cache (`data/msrp_cache.json`)**:
+  - Added committed seed cache `data/msrp_cache.json` to the repo so serverless environments like Vercel can resolve all 245 MSRPs instantly without needing headless browser binaries.
+
 
