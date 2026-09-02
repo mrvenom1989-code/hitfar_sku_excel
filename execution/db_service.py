@@ -106,28 +106,34 @@ def insert_catalog_items(items: List[Dict[str, Any]]) -> int:
         except Exception:
             pass
 
-    # Fetch existing prices for these items so we NEVER overwrite an existing price with None
-    existing_prices = {}
+    # Fetch existing metadata for these items so we NEVER overwrite created_date, created_at, or price
+    existing_meta = {}
     if is_supabase_available():
         try:
             skus = [it.get("supplier_sku") or f"Hitfar:{it.get('hitfar_sku', '')}" for it in items]
             for i in range(0, len(skus), 500):
                 sub_skus = skus[i:i+500]
-                res = supabase.table("hitfar_catalog").select("supplier_sku, price").in_("supplier_sku", sub_skus).not_.is_("price", "null").execute()
+                res = supabase.table("hitfar_catalog").select("id, supplier_sku, price, created_date, created_at").in_("supplier_sku", sub_skus).execute()
                 if res.data:
                     for r in res.data:
-                        if r.get("supplier_sku") and r.get("price") is not None:
-                            existing_prices[r["supplier_sku"]] = r["price"]
+                        if r.get("supplier_sku"):
+                            existing_meta[r["supplier_sku"]] = r
         except Exception as e:
-            print(f"[DB SERVICE] Note fetching existing prices: {e}")
+            print(f"[DB SERVICE] Note fetching existing metadata: {e}")
     else:
         _init_local_db()
         try:
             conn = sqlite3.connect(LOCAL_DB_PATH)
             cur = conn.cursor()
-            cur.execute("SELECT supplier_sku, price FROM hitfar_catalog WHERE price IS NOT NULL")
+            cur.execute("SELECT supplier_sku, price, created_date, created_at, id FROM hitfar_catalog")
             for r in cur.fetchall():
-                existing_prices[r[0]] = r[1]
+                existing_meta[r[0]] = {
+                    "supplier_sku": r[0],
+                    "price": r[1],
+                    "created_date": r[2],
+                    "created_at": r[3],
+                    "id": r[4]
+                }
             conn.close()
         except Exception:
             pass
@@ -138,18 +144,25 @@ def insert_catalog_items(items: List[Dict[str, Any]]) -> int:
     for it in items:
         supplier_sku = it.get("supplier_sku") or f"Hitfar:{it.get('hitfar_sku', '')}"
         hitfar_sku = it.get("hitfar_sku") or supplier_sku.replace("Hitfar:", "")
-        created_date = it.get("created_date") or today_str
         
-        price = it.get("price")
+        existing_row = existing_meta.get(supplier_sku)
+        if existing_row:
+            item_id = existing_row.get("id") or str(uuid.uuid4())
+            created_date = existing_row.get("created_date") or today_str
+            created_at = existing_row.get("created_at") or now_iso
+            price = it.get("price") if it.get("price") is not None else existing_row.get("price")
+        else:
+            item_id = str(it.get("id") or uuid.uuid4())
+            created_date = it.get("created_date") or today_str
+            created_at = it.get("created_at") or now_iso
+            price = it.get("price")
+            
         if price is None:
-            # 1. Preserve existing price from database
-            price = existing_prices.get(supplier_sku)
-        if price is None:
-            # 2. Fall back to cached MSRP if known
+            # Fall back to cached MSRP if known
             price = cache_map.get(hitfar_sku)
         
         formatted_items.append({
-            "id": str(it.get("id") or uuid.uuid4()),
+            "id": item_id,
             "item_type": it.get("item_type", "Accessories - Cases"),
             "manufacturer": it.get("manufacturer", "HyperGear"),
             "upc": it.get("upc", "-"),
@@ -166,7 +179,7 @@ def insert_catalog_items(items: List[Dict[str, Any]]) -> int:
             "location_scope": it.get("location_scope", "global"),
             "location": it.get("location", ""),
             "created_date": created_date,
-            "created_at": it.get("created_at", now_iso),
+            "created_at": created_at,
             "updated_at": now_iso,
             "last_order_po": it.get("last_order_po", ""),
             "last_order_date": it.get("last_order_date", today_str),
