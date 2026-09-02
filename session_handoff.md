@@ -4,7 +4,7 @@
 **Repository**: [https://github.com/mrvenom1989-code/hitfar_sku_excel](https://github.com/mrvenom1989-code/hitfar_sku_excel)  
 **Database**: Supabase `public.hitfar_catalog` on `https://lcqkwuoghxdierkzscpy.supabase.co`  
 **Live URL**: [https://hitfarskuexcel.vercel.app](https://hitfarskuexcel.vercel.app)  
-**Date**: August 27, 2026
+**Date**: September 2, 2026
 
 ---
 
@@ -83,3 +83,18 @@ npm run dev
 # OR: .\run_app.bat
 ```
 App runs locally at `http://localhost:5000`.
+
+---
+
+## 6. Recent Fixes & Hardening (September 2, 2026)
+
+- **PDF Ingestion Path Resolution Fix**:
+  - Resolved `FileNotFoundError: 'hitfar_sku/.tmp/msrp_cache.json'` in `execution/process_hitfar_order.py` by dynamically resolving the project root directory regardless of current working directory.
+- **Resilient Error Boundaries**:
+  - Wrapped scraper cache operations and Playwright execution in `try...except` so browser timeouts or network hiccups do not abort invoice ingestion.
+  - Ensured `insert_catalog_items()` always persists extracted products into Supabase; unscraped or unlisted SKUs are cleanly flagged as `⚠️ Missing MSRP` for 1-click manual editing.
+- **Fault-Tolerant Anchor Detection**:
+  - Made SKU anchor matching in `parse_pdf_orders()` case-insensitive and broadened regex patterns for supplier SKUs and MPNs.
+- **Verification**:
+  - Live test executed on Playwright browser scraping, cache writing, and `/api/upload-pdf` endpoint with 100% success.
+

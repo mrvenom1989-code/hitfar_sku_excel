@@ -65,3 +65,18 @@
 
 - **HTTPX Retry Monkey-Patch**: Like `advanced_reputation_guardian`, PostgREST HTTP connections can encounter transient socket drops (`RemoteProtocolError`). The monkey-patch in `config.py` wraps calls with exponential backoff (retries: 3).
 - **1,000-Row PostgREST Pagination**: PostgREST caps raw queries at 1,000 items. `db_service.py` implements a `.range(offset, offset + PAGE_SIZE - 1)` loop when fetching complete catalogs for Excel exports.
+
+---
+
+## 7. PDF Ingestion & Scraper Path Resilience (CWD & Error Boundaries)
+
+- **Issue**:
+  - `scrape_hitfar_msrp_batch()` in `execution/process_hitfar_order.py` previously hardcoded `cache_path = "hitfar_sku/.tmp/msrp_cache.json"`. When executing from within the `hitfar_sku/` working directory (e.g. `npm run dev` or `python app.py`), this relative path resolved to `hitfar_sku/hitfar_sku/.tmp/msrp_cache.json`, causing an unhandled `FileNotFoundError: [Errno 2] No such file or directory: 'hitfar_sku/.tmp/msrp_cache.json'` whenever a newly uploaded PDF contained un-cached SKUs.
+  - In `app.py`, `insert_catalog_items(new_items)` was positioned strictly downstream of the scraper without an error boundary. An unhandled exception during scraping aborted the entire request with HTTP 500 before any items could be saved to Supabase.
+- **Fix & Architectural Pattern**:
+  - **Dynamic Absolute Resolution**: Dynamically compute `base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))` and ensure `.tmp/` exists via `os.makedirs(tmp_dir, exist_ok=True)`.
+  - **Non-blocking Cache Writes**: Wrapped JSON cache writes in defensive `try...except` blocks so read-only filesystem environments (e.g. serverless containers) never disrupt the execution flow.
+  - **Scraper Error Boundaries**: Wrapped Playwright browser automation in `try...except` inside `scrape_hitfar_msrp_batch()` and `app.py`. If Playwright times out or Hitfar.com is unresponsive, the scraper returns `None` for missing MSRPs rather than terminating the upload.
+  - **Guaranteed Catalog Persistence**: In `app.py`, `insert_catalog_items(new_items)` runs regardless of scraping status, guaranteeing all line items are recorded in Supabase and missing MSRPs are flagged with `⚠️ Missing MSRP` for manual editing.
+  - **Resilient Anchor Parsing**: Made word anchor extraction and regex matching in `parse_pdf_orders()` case-insensitive to handle variations like `Hitfar SKU:`, `SKU:`, etc.
+

@@ -18,9 +18,10 @@ def parse_pdf_orders(pdf_path):
             
             sku_anchors = []
             for i, w in enumerate(words):
-                if w['text'] == 'Hitfar' and i + 1 < len(words) and 'SKU' in words[i+1]['text']:
+                w_txt = w['text'].lower()
+                if 'hitfar' in w_txt and i + 1 < len(words) and 'sku' in words[i+1]['text'].lower():
                     sku_anchors.append(w)
-                elif 'Hitfar' in w['text'] and 'SKU' in w['text']:
+                elif 'hitfar' in w_txt and 'sku' in w_txt:
                     sku_anchors.append(w)
                     
             sku_anchors = sorted(sku_anchors, key=lambda x: x['top'])
@@ -47,10 +48,13 @@ def parse_pdf_orders(pdf_path):
                 sku_line_words = [w for w in item_words if w['x1'] <= 305 and abs(w['top'] - anchor['top']) < 8]
                 sku_line_text = " ".join([w['text'] for w in sorted(sku_line_words, key=lambda x: (x['top'], x['x0']))])
                 
-                sku_m = re.search(r'Hitfar SKU:\s*([^\s|]+)', sku_line_text)
+                sku_m = re.search(r'Hitfar\s*SKU:\s*([^\s|]+)', sku_line_text, re.I)
                 hitfar_sku = sku_m.group(1) if sku_m else ""
+                if not hitfar_sku:
+                    sku_m = re.search(r'SKU:\s*([0-9A-Za-z\-_]+)', sku_line_text, re.I)
+                    hitfar_sku = sku_m.group(1) if sku_m else ""
                 
-                mpn_m = re.search(r'MPN:\s*([^\s]+)', sku_line_text)
+                mpn_m = re.search(r'MPN:\s*([^\s]+)', sku_line_text, re.I)
                 mpn = mpn_m.group(1) if mpn_m else ""
                 
                 qty_words = [w for w in item_words if 305 < w['x0'] and w['x1'] <= 355]
@@ -107,8 +111,12 @@ def scrape_hitfar_msrp_batch(skus_to_scrape, max_concurrency=4):
     print(f"\n--- Starting Hitfar MSRP scraping for {len(skus_to_scrape)} unique SKUs ---")
     sku_price_map = {}
     
-    # Check cache file if exists
-    cache_path = "hitfar_sku/.tmp/msrp_cache.json"
+    # Check cache file if exists (using robust absolute path)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tmp_dir = os.path.join(base_dir, ".tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    cache_path = os.path.join(tmp_dir, "msrp_cache.json")
+
     if os.path.exists(cache_path):
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
@@ -123,65 +131,78 @@ def scrape_hitfar_msrp_batch(skus_to_scrape, max_concurrency=4):
     if not missing_skus:
         return sku_price_map
         
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-        )
-        
-        # Warm up session
-        page = context.new_page()
-        print("Connecting to hitfar.com session...")
-        page.goto("https://www.hitfar.com", timeout=45000)
-        time.sleep(2)
-        page.close()
-        
-        # Create worker pages
-        workers = [context.new_page() for _ in range(max_concurrency)]
-        
-        for idx in range(0, len(missing_skus), max_concurrency):
-            batch = missing_skus[idx:idx + max_concurrency]
-            print(f"Processing batch {idx+1}-{min(idx+len(batch), len(missing_skus))} / {len(missing_skus)}: {batch}")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+            )
             
-            for w_idx, sku in enumerate(batch):
-                w_page = workers[w_idx]
-                url = f"https://www.hitfar.com/product/?search={sku}"
+            # Warm up session
+            page = context.new_page()
+            print("Connecting to hitfar.com session...")
+            try:
+                page.goto("https://www.hitfar.com", timeout=30000)
+                time.sleep(1)
+            except Exception as e:
+                print(f"Warm up navigation note: {e}")
+            finally:
                 try:
-                    w_page.goto(url, timeout=25000)
-                except Exception as e:
-                    print(f"Error navigating {sku}: {e}")
-            
-            for w_idx, sku in enumerate(batch):
-                w_page = workers[w_idx]
-                try:
-                    w_page.wait_for_selector(".product-item, .msrp__code, .no-products-found, .product-item__sku-value", timeout=6000)
+                    page.close()
                 except Exception:
                     pass
+            
+            # Create worker pages
+            workers = [context.new_page() for _ in range(min(max_concurrency, len(missing_skus)))]
+            
+            for idx in range(0, len(missing_skus), max_concurrency):
+                batch = missing_skus[idx:idx + max_concurrency]
+                print(f"Processing batch {idx+1}-{min(idx+len(batch), len(missing_skus))} / {len(missing_skus)}: {batch}")
                 
-                msrp_val = None
-                try:
-                    msrp_elem = w_page.query_selector(".msrp__code")
-                    if msrp_elem:
-                        t = msrp_elem.inner_text().strip()
-                        m = re.search(r'\$?(\d+\.\d{2})', t)
-                        if m:
-                            msrp_val = float(m.group(1))
-                    else:
-                        content = w_page.content()
-                        m = re.search(r'MSRP[:\s]*\$?(\d+\.\d{2})', content, re.I)
-                        if m:
-                            msrp_val = float(m.group(1))
-                except Exception as e:
-                    print(f"Extraction error for {sku}: {e}")
+                for w_idx, sku in enumerate(batch):
+                    w_page = workers[w_idx]
+                    url = f"https://www.hitfar.com/product/?search={sku}"
+                    try:
+                        w_page.goto(url, timeout=20000)
+                    except Exception as e:
+                        print(f"Error navigating {sku}: {e}")
+                
+                for w_idx, sku in enumerate(batch):
+                    w_page = workers[w_idx]
+                    try:
+                        w_page.wait_for_selector(".product-item, .msrp__code, .no-products-found, .product-item__sku-value", timeout=5000)
+                    except Exception:
+                        pass
                     
-                print(f"  [Scraped] {sku} -> MSRP: ${msrp_val}")
-                sku_price_map[sku] = msrp_val
-                
-            # Periodically save cache
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump(sku_price_map, f, indent=2)
-                
-        browser.close()
+                    msrp_val = None
+                    try:
+                        msrp_elem = w_page.query_selector(".msrp__code")
+                        if msrp_elem:
+                            t = msrp_elem.inner_text().strip()
+                            m = re.search(r'\$?(\d+\.\d{2})', t)
+                            if m:
+                                msrp_val = float(m.group(1))
+                        else:
+                            content = w_page.content()
+                            m = re.search(r'MSRP[:\s]*\$?(\d+\.\d{2})', content, re.I)
+                            if m:
+                                msrp_val = float(m.group(1))
+                    except Exception as e:
+                        print(f"Extraction error for {sku}: {e}")
+                        
+                    print(f"  [Scraped] {sku} -> MSRP: ${msrp_val}")
+                    sku_price_map[sku] = msrp_val
+                    
+                # Periodically save cache safely
+                try:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(sku_price_map, f, indent=2)
+                except Exception as cache_save_err:
+                    print(f"Cache write skipped: {cache_save_err}")
+                    
+            browser.close()
+    except Exception as playwright_err:
+        print(f"[PLAYWRIGHT SCRAPER ERROR] {playwright_err}")
         
     return sku_price_map
 

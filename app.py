@@ -107,9 +107,14 @@ def api_upload_pdf():
         missing_msrp_skus = []
         
         if unique_new_skus:
-            # Scrape batch
-            scraped_price_map = scrape_hitfar_msrp_batch(unique_new_skus, max_concurrency=4)
-            for sku, price in scraped_price_map.items():
+            try:
+                scraped_price_map = scrape_hitfar_msrp_batch(unique_new_skus, max_concurrency=4)
+            except Exception as scrape_err:
+                print(f"[API UPLOAD WARNING] Scraper error: {scrape_err}")
+                scraped_price_map = {}
+                
+            for sku in unique_new_skus:
+                price = scraped_price_map.get(sku)
                 if price is None:
                     missing_msrp_skus.append(sku)
                     
@@ -117,8 +122,16 @@ def api_upload_pdf():
             for it in new_items:
                 it["price"] = scraped_price_map.get(it["hitfar_sku"])
                 
-            # Step 4: Insert new items into database
+        # Step 4: Always persist new items into catalog
+        if new_items:
             insert_catalog_items(new_items)
+            
+        # Update existing items with latest cost & order data
+        if existing_items:
+            try:
+                insert_catalog_items(existing_items)
+            except Exception as sync_err:
+                print(f"[API UPLOAD] Existing items sync note: {sync_err}")
             
         return jsonify({
             "success": True,
