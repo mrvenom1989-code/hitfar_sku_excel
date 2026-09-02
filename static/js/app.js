@@ -399,6 +399,39 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.href = `/api/export?${params.toString()}`;
     });
 
+    const btnSyncMsrp = document.getElementById('btnSyncMsrp');
+    if (btnSyncMsrp) {
+        btnSyncMsrp.addEventListener('click', async () => {
+            btnSyncMsrp.disabled = true;
+            const origContent = btnSyncMsrp.innerHTML;
+            btnSyncMsrp.innerHTML = `
+                <div class="spinner" style="width:13px;height:13px;border-width:2px;display:inline-block;margin-right:6px;vertical-align:middle;"></div>
+                Syncing MSRP...
+            `;
+            try {
+                const res = await fetch('/api/sync-msrps', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ all: false })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(data.message);
+                    fetchStats();
+                    fetchCatalog();
+                } else {
+                    alert(`Sync failed: ${data.error}`);
+                }
+            } catch (err) {
+                console.error('MSRP sync error:', err);
+                alert('Failed to connect to MSRP sync service.');
+            } finally {
+                btnSyncMsrp.disabled = false;
+                btnSyncMsrp.innerHTML = origContent;
+            }
+        });
+    }
+
     // ==========================================
     // UPLOAD PDF INGESTION FLOW
     // ==========================================

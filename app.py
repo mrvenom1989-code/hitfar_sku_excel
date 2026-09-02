@@ -199,6 +199,49 @@ def api_rescrape_sku():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route("/api/sync-msrps", methods=["POST"])
+def api_sync_msrps():
+    try:
+        data = request.get_json() or {}
+        force_all = data.get("all", False)
+        
+        if force_all:
+            result = query_catalog(limit=5000)
+            items = result.get("items", [])
+        else:
+            result = query_catalog(missing_msrp_only=True, limit=5000)
+            items = result.get("items", [])
+            
+        if not items:
+            return jsonify({
+                "success": True,
+                "message": "All items in the catalog already have valid retail MSRPs.",
+                "updated_count": 0,
+                "total_checked": 0
+            })
+            
+        skus_to_scrape = list(dict.fromkeys([it["hitfar_sku"] for it in items if it.get("hitfar_sku")]))
+        price_map = scrape_hitfar_msrp_batch(skus_to_scrape)
+        
+        updated_count = 0
+        for it in items:
+            h_sku = it.get("hitfar_sku")
+            new_price = price_map.get(h_sku)
+            if new_price is not None and new_price != it.get("price"):
+                success = update_item_price(it["id"], new_price)
+                if success:
+                    updated_count += 1
+                    
+        return jsonify({
+            "success": True,
+            "message": f"Sync complete: Successfully updated {updated_count} item(s) with live MSRP.",
+            "updated_count": updated_count,
+            "total_checked": len(items),
+            "unresolved_count": len(skus_to_scrape) - sum(1 for s in skus_to_scrape if price_map.get(s) is not None)
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route("/api/export", methods=["GET"])
 def api_export():
     try:

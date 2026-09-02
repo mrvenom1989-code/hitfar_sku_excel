@@ -102,4 +102,35 @@ App runs locally at `http://localhost:5000`.
 - **Bundled Seed Cache (`data/msrp_cache.json`)**:
   - Added committed seed cache `data/msrp_cache.json` to the repo so serverless environments like Vercel can resolve all 245 MSRPs instantly without needing headless browser binaries.
 
+---
+
+## 7. Live MSRP Sync Feature (`/api/sync-msrps`)
+
+- **UI Button**: Added `Sync MSRP` button in the header toolbar next to `Export to Excel`.
+- **Functionality**:
+  - Automatically queries all catalog records missing an MSRP (`price IS NULL OR price = 0`).
+  - Runs the hybrid scraper (pure Python SlowAES solver with Playwright fallback).
+  - Updates Supabase records directly and writes discovered prices to the cache.
+  - Allows store managers to re-fetch MSRPs on demand at any time without re-uploading an invoice.
+
+---
+
+## 8. Pipeline Roadmap: Location-Based Approach
+
+- **Current Schema Support**:
+  - `public.hitfar_catalog` already includes:
+    * `location_scope` (TEXT, default `'global'`)
+    * `location` (TEXT, default `''`)
+    * Standardized 13-column layout conforms to `order sku.xlsx` columns L & M.
+- **Planned Pipeline Enhancements**:
+  1. **Invoice Location Extraction**:
+     - Extract `Ship To:` store addresses or store IDs (e.g. `MK-101`) from invoice PDF headers.
+     - Tag parsed line items with `location = <Store Identifier>` and `location_scope = 'local'`.
+  2. **Data Model Scoping**:
+     - Composite uniqueness constraint: `(supplier_sku, location)` to allow store-specific cost, stock, or price overrides while retaining `global` fallback items.
+  3. **Dashboard Location Filtering**:
+     - Add Location dropdown / quick-filter pills (`All Locations`, `Global`, individual store locations).
+     - Filter catalog views, KPI cards, and Excel exports by specific Mobile Klinik store locations.
+
+
 
